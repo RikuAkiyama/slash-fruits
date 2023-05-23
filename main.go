@@ -165,8 +165,8 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 
 // ログイン認証
 func loginHandler(w http.ResponseWriter, r *http.Request) {
-	// GETメソッドのみ許可
-	if r.Method != http.MethodGet {
+	// POSTメソッドのみ許可
+	if r.Method != http.MethodPost {
 		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
