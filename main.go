@@ -33,6 +33,25 @@ type ScoreSubmission struct {
 	Score int `json:"score"`
 }
 
+// エラーレスポンス用の構造体
+type ErrorResponse struct {
+	Message string `json:"message"`
+}
+
+// エラーレスポンスを返却
+func errorResponse(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(ErrorResponse{Message: message})
+}
+
+// 正規のレスポンスを返却
+func jsonResponse(w http.ResponseWriter, data interface{}, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
+}
+
 func main() {
 	// 環境変数からDB接続情報を取得
 	dbUser := os.Getenv("DB_USER")
@@ -82,7 +101,7 @@ func main() {
 func registerHandler(w http.ResponseWriter, r *http.Request) {
 	// POSTメソッドのみ許可
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -90,7 +109,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	// リクエストボディからユーザー情報を取得
 	err := json.NewDecoder(r.Body).Decode(&u)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		errorResponse(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -99,31 +118,31 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	err = row.Scan(&exists)
 	if err != nil && err != sql.ErrNoRows {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Database error", http.StatusInternalServerError)
 		return
 	} else if exists {
-		http.Error(w, "Username already exists", http.StatusBadRequest)
+		errorResponse(w, "Username already exists", http.StatusBadRequest)
 		return
 	}
 
 	// パスワードをハッシュ化
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Password hashing error", http.StatusInternalServerError)
 		return
 	}
 
 	// ユーザーをDBに追加
 	result, err := db.Exec("INSERT INTO Users (Username, HashedPassword) VALUES (?, ?)", u.Username, hashedPassword)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
 	// 新たに生成したユーザーIDを取得
 	userID, err := result.LastInsertId()
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
@@ -135,20 +154,20 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Token generation error", http.StatusInternalServerError)
 		return
 	}
 
-	// JWTをJSON形式で返す
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+	// JWTをJSON形式でクライアントへ送信
+	response := map[string]string{"token": tokenString}
+	jsonResponse(w, response, http.StatusOK)
 }
 
 // ログイン認証
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -156,7 +175,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	// リクエストボディからユーザー情報を取得
 	err := json.NewDecoder(r.Body).Decode(&u)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		errorResponse(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
@@ -165,14 +184,14 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	var hashedPassword string
 	err = db.QueryRow("SELECT ID, HashedPassword FROM Users WHERE Username = ?", u.Username).Scan(&userID, &hashedPassword)
 	if err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
+		errorResponse(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	// ハッシュ化されたパスワードと入力されたパスワードを比較
 	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(u.Password))
 	if err != nil {
-		http.Error(w, "Invalid password", http.StatusUnauthorized)
+		errorResponse(w, "Invalid password", http.StatusUnauthorized)
 		return
 	}
 
@@ -184,44 +203,46 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// JWTをJSON形式でクライアントへ返す
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+	// JWTをJSON形式でクライアントへ送信
+	response := map[string]string{"token": tokenString}
+	jsonResponse(w, response, http.StatusOK)
 }
 
 // JWTの有効期限をリセット
 func tokenRefresh(w http.ResponseWriter, r *http.Request) {
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// JWTからユーザーIDとユーザー名を取得
+	// ヘッダーからJWTを取得し、クレームにデコード
 	tokenStr := r.Header.Get("Authorization")
 	claims := &jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		errorResponse(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	// JWTからユーザーIDとユーザー名を取得
 	userID := int64((*claims)["userid"].(float64))
 	username := (*claims)["username"].(string)
 
 	// JWTの有効期限を確認
 	exp, ok := (*claims)["exp"].(float64)
 	if !ok || time.Unix(int64(exp), 0).Before(time.Now()) {
-		http.Error(w, "Token expired", http.StatusUnauthorized)
+		errorResponse(w, "Token expired", http.StatusUnauthorized)
 		return
 	}
 
-	// JWTをリフレッシュ
+	// JWTを新しく生成
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"userid":   userID,
 		"username": username,
@@ -229,61 +250,62 @@ func tokenRefresh(w http.ResponseWriter, r *http.Request) {
 	})
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// JWTをJSON形式でクライアントへ返す
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+	// 生成したJWTをクライアントに送信
+	response := map[string]string{"token": tokenString}
+	jsonResponse(w, response, http.StatusOK)
 }
 
 // スコアを登録
 func scoreHandler(w http.ResponseWriter, r *http.Request) {
 	// POSTメソッドのみ許可
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// JWTからユーザーIDを取得
+	// ヘッダーからJWTを取得し、クレームにデコード
 	tokenStr := r.Header.Get("Authorization")
 	claims := &jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
 	if err != nil {
-
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		errorResponse(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	// JWTからユーザーIDを取得
 	userID := int64((*claims)["userid"].(float64))
 
 	// リクエストボディからスコアを読み込む
 	var submission ScoreSubmission
 	err = json.NewDecoder(r.Body).Decode(&submission)
 	if err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
+		errorResponse(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
 	// データベースに新たなスコアを登録
 	_, err = db.Exec("INSERT INTO Scores (UserID, GameScore) VALUES (?, ?)", userID, submission.Score)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// 成功した場合、200ステータスコードとともにJSONをクライアントに返す
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	// 成功した場合、JSONをクライアントに送信
+	responce := map[string]string{"status": "success"}
+	jsonResponse(w, responce, http.StatusOK)
 }
 
 // 全体のスコアランキングを取得
 func rankingHandler(w http.ResponseWriter, r *http.Request) {
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -296,7 +318,7 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 		LIMIT 5
 	`)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -306,49 +328,48 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 		UserID   int64  `json:"user_id"`
 		Username string `json:"username"`
 		ScoreID  int64  `json:"score_id"`
-		Score    int    `json:"score"`
+		Score    int64  `json:"score"`
 	}
 
-	// データベースからの結果を格納します
+	// データベースからの結果を格納
 	var ranking []Response
 	for rows.Next() {
 		var r Response
 		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score); err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			errorResponse(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		ranking = append(ranking, r)
 	}
-
-	// エラーハンドリング
 	if err := rows.Err(); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// 結果をJSONとしてクライアントに返す
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ranking)
+	// 結果をJSONとしてクライアントに送信
+	jsonResponse(w, ranking, http.StatusOK)
 }
 
 // ユーザー個別のスコアランキングを取得
 func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// JWTからユーザーIDを取得
+	// ヘッダーからJWTを取得し、クレームにデコード
 	tokenStr := r.Header.Get("Authorization")
 	claims := &jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		errorResponse(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	// JWTからユーザーIDを取得
 	userID := int64((*claims)["userid"].(float64))
 
 	// ユーザーの全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
@@ -361,7 +382,7 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 		LIMIT 5
 	`, userID)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -371,27 +392,24 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 		UserID   int64  `json:"user_id"`
 		Username string `json:"username"`
 		ScoreID  int64  `json:"score_id"`
-		Score    int    `json:"score"`
+		Score    int64  `json:"score"`
 	}
 
-	// データベースからの結果を格納します
+	// データベースからの結果を格納
 	var ranking []Response
 	for rows.Next() {
 		var r Response
 		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score); err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			errorResponse(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		ranking = append(ranking, r)
 	}
-
-	// エラーハンドリング
 	if err := rows.Err(); err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	// 結果をJSONとしてクライアントに返す
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ranking)
+	// 結果をJSONとしてクライアントに送信
+	jsonResponse(w, ranking, http.StatusOK)
 }
