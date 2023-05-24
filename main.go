@@ -365,11 +365,14 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
 	rows, err := db.Query(`
-		SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore, RANK() OVER (ORDER BY Scores.GameScore DESC) AS Rank
-		FROM Users
-		JOIN Scores ON Users.ID = Scores.UserID
-		ORDER BY Scores.GameScore DESC, Scores.Timestamp ASC
-		LIMIT ?
+		SELECT ID, Username, ScoreID, GameScore, RANK() OVER (ORDER BY GameScore DESC) AS Rank
+		FROM (
+			SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore
+			FROM Users
+			JOIN Scores ON Users.ID = Scores.UserID
+			ORDER BY Scores.GameScore DESC, Scores.Timestamp ASC
+			LIMIT ?
+		) AS LimitedScores
 	`, limit)
 	if err != nil {
 		log.Printf("rankingHandler: error querying database: %v", err)
@@ -432,12 +435,15 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ユーザーの全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
 	rows, err := db.Query(`
-		SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore, RANK() OVER (ORDER BY Scores.GameScore DESC) AS Rank
-		FROM Users
-		JOIN Scores ON Users.ID = Scores.UserID
-		WHERE Users.ID = ?
-		ORDER BY Scores.GameScore DESC, Scores.Timestamp ASC
-		LIMIT ?
+		SELECT ID, Username, ScoreID, GameScore, RANK() OVER (ORDER BY GameScore DESC) AS Rank
+		FROM (
+			SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore
+			FROM Users
+			JOIN Scores ON Users.ID = Scores.UserID
+			WHERE Users.ID = ?
+			ORDER BY Scores.GameScore DESC, Scores.Timestamp ASC
+			LIMIT ?
+		) AS LimitedScores
 	`, userID, limit)
 	if err != nil {
 		log.Printf("userRankingHandler: error querying database: %v", err)
