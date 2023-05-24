@@ -49,6 +49,8 @@ type ScoreRanking struct {
 
 // エラーレスポンスを返却
 func errorResponse(w http.ResponseWriter, message string, statusCode int) {
+	log.Println("errorResponse: starting")
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(ErrorResponse{Message: message})
@@ -56,6 +58,8 @@ func errorResponse(w http.ResponseWriter, message string, statusCode int) {
 
 // 正規のレスポンスを返却
 func jsonResponse(w http.ResponseWriter, data interface{}, statusCode int) {
+	log.Println("jsonResponse: starting")
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(data)
@@ -108,6 +112,8 @@ func main() {
 
 // 新規ユーザーを登録
 func registerHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("registerHandler: starting")
+
 	// POSTメソッドのみ許可
 	if r.Method != http.MethodPost {
 		log.Printf("registerHandler: Invalid method")
@@ -183,6 +189,8 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 
 // ログイン認証
 func loginHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("loginHandler: starting")
+
 	// POSTメソッドのみ許可
 	if r.Method != http.MethodPost {
 		log.Printf("loginHandler: Invalid method")
@@ -238,7 +246,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 // JWTの有効期限をリセット
 func tokenRefreshHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("Starting token refresh")
+	log.Println("tokenRefreshHandler: starting")
+
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
 		log.Println("tokenRefreshHandler: Invalid method")
@@ -292,7 +301,8 @@ func tokenRefreshHandler(w http.ResponseWriter, r *http.Request) {
 
 // スコアを登録
 func scoreHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("Starting score registration")
+	log.Println("scoreHandler: starting")
+
 	// POSTメソッドのみ許可
 	if r.Method != http.MethodPost {
 		log.Println("scoreHandler: Invalid method")
@@ -341,6 +351,8 @@ func scoreHandler(w http.ResponseWriter, r *http.Request) {
 
 // 全体のスコアランキングを取得
 func rankingHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("rankingHandler: starting")
+
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
 		log.Println("rankingHandler: Invalid method")
@@ -348,14 +360,17 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ランキングの取得件数
+	limit := 9
+
 	// 全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
 	rows, err := db.Query(`
-		SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore
+		SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore, RANK() OVER (ORDER BY Scores.GameScore DESC) AS Rank
 		FROM Users
 		JOIN Scores ON Users.ID = Scores.UserID
 		ORDER BY Scores.GameScore DESC, Scores.Timestamp ASC
-		LIMIT 9
-	`)
+		LIMIT ?
+	`, limit)
 	if err != nil {
 		log.Printf("rankingHandler: error querying database: %v", err)
 		errorResponse(w, "Internal server error", http.StatusInternalServerError)
@@ -367,7 +382,7 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 	var ranking []ScoreRanking
 	for rows.Next() {
 		var r ScoreRanking
-		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score); err != nil {
+		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score, &r.Rank); err != nil {
 			log.Printf("rankingHandler: error scanning row: %v", err)
 			errorResponse(w, "Internal server error", http.StatusInternalServerError)
 			return
@@ -387,9 +402,11 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 
 // ユーザー個別のスコアランキングを取得
 func userRankingHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("userRankingHandler: starting")
+
 	// GETメソッドのみ許可
 	if r.Method != http.MethodGet {
-		log.Println("Invalid method")
+		log.Println("userRankingHandler: Invalid method")
 		errorResponse(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
@@ -410,15 +427,18 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 	userID := int64((*claims)["userid"].(float64))
 	log.Printf("userRankingHandler: User ID: %d", userID)
 
+	// ランキングの取得件数
+	limit := 9
+
 	// ユーザーの全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
 	rows, err := db.Query(`
-		SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore
+		SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore, RANK() OVER (ORDER BY Scores.GameScore DESC) AS Rank
 		FROM Users
 		JOIN Scores ON Users.ID = Scores.UserID
 		WHERE Users.ID = ?
 		ORDER BY Scores.GameScore DESC, Scores.Timestamp ASC
-		LIMIT 9
-	`, userID)
+		LIMIT ?
+	`, userID, limit)
 	if err != nil {
 		log.Printf("userRankingHandler: error querying database: %v", err)
 		errorResponse(w, "Internal server error", http.StatusInternalServerError)
@@ -430,7 +450,7 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 	var ranking []ScoreRanking
 	for rows.Next() {
 		var r ScoreRanking
-		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score); err != nil {
+		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score, &r.Rank); err != nil {
 			log.Printf("userRankingHandler: error scanning row: %v", err)
 			errorResponse(w, "Internal server error", http.StatusInternalServerError)
 			return
