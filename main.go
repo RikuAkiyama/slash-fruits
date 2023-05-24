@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -256,7 +257,11 @@ func tokenRefreshHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ヘッダーからJWTを取得し、クレームにデコード
-	tokenStr := r.Header.Get("Authorization")
+	authHeader := r.Header.Get("Authorization")
+	tokenStr := authHeader
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+	}
 	claims := &jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
@@ -311,7 +316,11 @@ func scoreHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ヘッダーからJWTを取得し、クレームにデコード
-	tokenStr := r.Header.Get("Authorization")
+	authHeader := r.Header.Get("Authorization")
+	tokenStr := authHeader
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+	}
 	claims := &jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
@@ -415,7 +424,11 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ヘッダーからJWTを取得し、クレームにデコード
-	tokenStr := r.Header.Get("Authorization")
+	authHeader := r.Header.Get("Authorization")
+	tokenStr := authHeader
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+	}
 	claims := &jwt.MapClaims{}
 	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
