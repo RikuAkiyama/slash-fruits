@@ -40,7 +40,7 @@ type ErrorResponse struct {
 
 // ランキング形式のレスポンスを定義
 type ScoreRanking struct {
-	Rank     int    `json:"rank"`
+	Ranking  int    `json:"rank"`
 	UserID   int64  `json:"user_id"`
 	Username string `json:"username"`
 	ScoreID  int64  `json:"score_id"`
@@ -365,7 +365,7 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
 	rows, err := db.Query(`
-		SELECT ID, Username, ScoreID, GameScore, RANK() OVER (ORDER BY GameScore DESC) AS Rank
+		SELECT ID, Username, ScoreID, GameScore, RANK() OVER (ORDER BY GameScore DESC) AS Ranking
 		FROM (
 			SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore
 			FROM Users
@@ -385,7 +385,7 @@ func rankingHandler(w http.ResponseWriter, r *http.Request) {
 	var ranking []ScoreRanking
 	for rows.Next() {
 		var r ScoreRanking
-		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score, &r.Rank); err != nil {
+		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score, &r.Ranking); err != nil {
 			log.Printf("rankingHandler: error scanning row: %v", err)
 			errorResponse(w, "Internal server error", http.StatusInternalServerError)
 			return
@@ -435,7 +435,7 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ユーザーの全プレイ履歴の中から、スコアが高い順に5件までIDとユーザー名とスコアIDとスコアを取得
 	rows, err := db.Query(`
-		SELECT ID, Username, ScoreID, GameScore, RANK() OVER (ORDER BY GameScore DESC) AS Rank
+		SELECT ID, Username, ScoreID, GameScore, RANK() OVER (ORDER BY GameScore DESC) AS Ranking
 		FROM (
 			SELECT Users.ID, Users.Username, Scores.ScoreID, Scores.GameScore
 			FROM Users
@@ -456,7 +456,7 @@ func userRankingHandler(w http.ResponseWriter, r *http.Request) {
 	var ranking []ScoreRanking
 	for rows.Next() {
 		var r ScoreRanking
-		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score, &r.Rank); err != nil {
+		if err := rows.Scan(&r.UserID, &r.Username, &r.ScoreID, &r.Score, &r.Ranking); err != nil {
 			log.Printf("userRankingHandler: error scanning row: %v", err)
 			errorResponse(w, "Internal server error", http.StatusInternalServerError)
 			return
